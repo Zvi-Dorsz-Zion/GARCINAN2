@@ -118,3 +118,5 @@ button{font-family:inherit}
 @keyframes slideR{from{transform:translateX(26px);opacity:.2}to{transform:none;opacity:1}}
 .slide-in-left{animation:slideL .2s ease-out}
 .slide-in-right{animation:slideR .2s ease-out}
+
+.drawer{touch-action:pan-y;overscroll-behavior:contain}

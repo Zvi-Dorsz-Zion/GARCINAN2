@@ -151,10 +151,10 @@
     showCol('p');
   }
 
-  function selectPage(p) {
+  function selectPage(p, opts) {
     state.page = p;
     state.sections = q('SELECT id, section_label FROM sections WHERE page_id = ? ORDER BY id', [p.id]);
-    state.section = state.sections[0] || null;
+    state.section = (opts && state.sections.find((x) => x.id === opts.sectionId)) || state.sections[0] || null;
     $('titleMasechet').textContent = state.masechet.name;
     $('titleLocation').textContent = p.page_label;
     closeDrawer();
@@ -163,7 +163,7 @@
     renderChips();
     renderWitnessTabs();
     renderText();
-    $('mainContent').scrollTop = 0;
+    $('mainContent').scrollTop = (opts && opts.y) || 0;
   }
 
   // ---------- compare view ----------
@@ -254,7 +254,32 @@
     }).join(' ');
   }
 
-  function renderText() {
+  // ---- remember last position ----
+  function saveLast() {
+    try {
+      if (!state.masechet || !state.page) return;
+      localStorage.setItem('tf_last', JSON.stringify({
+        m: state.masechet.id, p: state.page.id, s: state.section && state.section.id,
+        w: state.witness, y: $('mainContent').scrollTop
+      }));
+    } catch (e) {}
+  }
+  function restoreLast() {
+    try {
+      const last = JSON.parse(localStorage.getItem('tf_last') || 'null');
+      if (!last) return;
+      const m = state.masechtot.find((x) => x.id === last.m);
+      if (!m) return;
+      selectMasechet(m);
+      const p = state.pages.find((x) => x.id === last.p);
+      if (!p) return;
+      state.witness = last.w || null;
+      selectPage(p, { sectionId: last.s, y: last.y });
+    } catch (e) { console.error('restore failed', e); }
+  }
+
+  function renderText() { renderTextInner(); saveLast(); }
+  function renderTextInner() {
     const pane = $('textPane');
     pane.className = 'text-pane' + (state.hideAbbrev ? ' hide-abbrev' : '');
     if (state.wordMode) return renderWordMode();
@@ -333,6 +358,39 @@
     $('toggleHideAbbrev').onchange = (e) => { state.hideAbbrev = e.target.checked; savePrefs(); if (state.page) renderText(); };
 
 
+
+    // save scroll position (debounced)
+    let st; $('mainContent').addEventListener('scroll', () => { clearTimeout(st); st = setTimeout(saveLast, 300); }, { passive: true });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) saveLast(); });
+
+    // ---- swipe right to close the navigation drawer (it opens from the right edge) ----
+    (function () {
+      const dr = $('drawer'), scrim = $('drawerScrim');
+      let x0 = 0, y0 = 0, drag = null, dx = 0;
+      dr.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; drag = null; dx = 0; }, { passive: true });
+      dr.addEventListener('touchmove', (e) => {
+        const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+        if (drag === null && (Math.abs(mx) > 10 || Math.abs(my) > 10)) {
+          drag = mx > 0 && Math.abs(mx) > Math.abs(my) * 1.2;
+          if (drag) dr.style.transition = 'none';
+        }
+        if (drag) {
+          dx = Math.max(0, mx);
+          dr.style.transform = 'translateX(' + dx + 'px)';
+          scrim.style.opacity = String(Math.max(0, 1 - dx / dr.offsetWidth));
+        }
+      }, { passive: true });
+      const end = () => {
+        if (drag) {
+          dr.style.transition = ''; dr.style.transform = ''; scrim.style.opacity = '';
+          if (dx > 70) closeDrawer();
+        }
+        drag = null; dx = 0;
+      };
+      dr.addEventListener('touchend', end);
+      dr.addEventListener('touchcancel', end);
+    })();
+
     // ---- swipe between witnesses (drag content right = next, left = previous; tabs are RTL) ----
     (function () {
       const main = $('mainContent');
@@ -401,6 +459,7 @@
     $('dbSourceLabel').textContent = state.dbSource || '';
     renderMasechtot();
     showCol('m');
+    restoreLast();
     $('loadingScreen').hidden = true;
   } catch (e) {
     console.error(e);
