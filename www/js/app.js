@@ -5,7 +5,7 @@
   const state = {
     db: null, masechtot: [], masechet: null, pages: [], page: null,
     sections: [], section: null, witnesses: [], witness: null,
-    fontScale: 1, wordMode: false, readMode: false, hideAbbrev: true, theme: 'parchment'
+    fontScale: 1, wordMode: false, readMode: false, hideAbbrev: true, onlyChanged: false, theme: 'parchment'
   };
 
   // ---------- settings persistence ----------
@@ -17,8 +17,8 @@
   }
   function savePrefs() {
     try {
-      const { fontScale, wordMode, readMode, hideAbbrev, theme } = state;
-      localStorage.setItem('tf_prefs', JSON.stringify({ fontScale, wordMode, readMode, hideAbbrev, theme }));
+      const { fontScale, wordMode, readMode, hideAbbrev, onlyChanged, theme } = state;
+      localStorage.setItem('tf_prefs', JSON.stringify({ fontScale, wordMode, readMode, hideAbbrev, onlyChanged, theme }));
     } catch (e) {}
   }
   function applyPrefs() {
@@ -28,6 +28,7 @@
     $('toggleWordMode').checked = state.wordMode;
     $('toggleReadMode').checked = state.readMode;
     $('toggleHideAbbrev').checked = state.hideAbbrev;
+    $('toggleOnlyChanged').checked = state.onlyChanged;
     document.querySelectorAll('#themeSwitch button').forEach((b) =>
       b.classList.toggle('active', b.dataset.theme === state.theme));
   }
@@ -174,7 +175,7 @@
       const c = document.createElement('button');
       c.className = 'chip' + (state.section && s.id === state.section.id ? ' active' : '');
       c.textContent = s.section_label || ('קטע ' + (i + 1));
-      c.onclick = () => { state.section = s; renderChips(); renderText(); $('mainContent').scrollTop = 0; };
+      c.onclick = () => { state.section = s; renderChips(); renderWitnessTabs(); renderText(); $('mainContent').scrollTop = 0; };
       row.appendChild(c);
     });
   }
@@ -185,23 +186,61 @@
               WHERE t.section_id = ? ORDER BY w.position`, [sectionId]);
   }
 
+  const normText = (t) => TalmudDiff.tokens(t).map(TalmudDiff.norm).join(' ');
+  const currentSections = () => state.readMode ? state.sections : (state.section ? [state.section] : []);
+
+  // Witnesses visible now. With "only changed", keeps the representative + witnesses that differ from it.
+  function buildWitnessList() {
+    const per = currentSections().map((sec) => witnessesForSection(sec.id));
+    const ws = new Map();
+    per.forEach((rows) => rows.forEach((r) => { if (!ws.has(r.wid)) ws.set(r.wid, { ...r, changed: false }); }));
+    per.forEach((rows) => {
+      const rep = rows.find((r) => r.position === 0) || rows[0];
+      if (!rep) return;
+      const rn = normText(rep.content);
+      rows.forEach((r) => { if (r !== rep && normText(r.content) !== rn) ws.get(r.wid).changed = true; });
+    });
+    let list = [...ws.values()].sort((a, b) => a.position - b.position);
+    if (state.onlyChanged) list = list.filter((w) => w.position === 0 || w.changed);
+    return list;
+  }
+
   function renderWitnessTabs() {
     const wrap = $('witnessTabs');
     wrap.innerHTML = '';
-    if (state.wordMode) { wrap.hidden = true; return; }
+    if (state.wordMode) { wrap.hidden = true; state.visible = []; return; }
     wrap.hidden = false;
-    const secs = state.readMode ? state.sections : (state.section ? [state.section] : []);
-    const ws = new Map();
-    secs.forEach((s) => witnessesForSection(s.id).forEach((r) => ws.set(r.wid, r)));
-    const list = [...ws.values()].sort((a, b) => a.position - b.position);
-    if (!state.witness || !ws.has(state.witness)) state.witness = list.length ? (list.find((x) => x.position === 0) || list[0]).wid : null;
+    const list = buildWitnessList();
+    state.visible = list;
+    if (!list.some((w) => w.wid === state.witness)) {
+      state.witness = list.length ? (list.find((x) => x.position === 0) || list[0]).wid : null;
+    }
+    let active = null;
     list.forEach((w) => {
       const t = document.createElement('button');
-      t.className = 'witness-tab' + (w.wid === state.witness ? ' active' : '');
+      const on = w.wid === state.witness;
+      t.className = 'witness-tab' + (on ? ' active' : '');
       t.innerHTML = esc(w.name) + (w.position === 0 ? '<span class="rep-star">★</span>' : '');
       t.onclick = () => { state.witness = w.wid; renderWitnessTabs(); renderText(); };
       wrap.appendChild(t);
+      if (on) active = t;
     });
+    if (active) active.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }
+
+  // dir: +1 = next witness (its tab is to the left), -1 = previous
+  function switchWitness(dir) {
+    const list = state.visible || [];
+    if (state.wordMode || list.length < 2) return;
+    let i = list.findIndex((w) => w.wid === state.witness);
+    i = (i + dir + list.length) % list.length;
+    state.witness = list[i].wid;
+    renderWitnessTabs();
+    renderText();
+    const pane = $('textPane');
+    pane.classList.remove('slide-in-left', 'slide-in-right');
+    void pane.offsetWidth;
+    pane.classList.add(dir > 0 ? 'slide-in-left' : 'slide-in-right');
   }
 
   function renderDiff(rep, cur, isRep) {
@@ -229,6 +268,9 @@
       if (state.readMode) html += `<div class="section-heading">${esc(s.section_label)}</div>`;
       html += `<p>${renderDiff(rep ? rep.content : '', cur.content, cur === rep)}</p>`;
     });
+    if (state.onlyChanged && state.visible && state.visible.length === 1 && html) {
+      html = '<div class="no-change">בקטע הזה אין נוסחאות שונות מהנוסח המייצג.</div>' + html;
+    }
     pane.innerHTML = html || '<p>אין טקסט לקטע זה.</p>';
   }
 
@@ -287,7 +329,50 @@
     const refresh = () => { renderChips(); renderWitnessTabs(); renderText(); };
     $('toggleWordMode').onchange = (e) => { state.wordMode = e.target.checked; savePrefs(); if (state.page) refresh(); };
     $('toggleReadMode').onchange = (e) => { state.readMode = e.target.checked; savePrefs(); if (state.page) refresh(); };
+    $('toggleOnlyChanged').onchange = (e) => { state.onlyChanged = e.target.checked; savePrefs(); if (state.page) refresh(); };
     $('toggleHideAbbrev').onchange = (e) => { state.hideAbbrev = e.target.checked; savePrefs(); if (state.page) renderText(); };
+
+
+    // ---- swipe between witnesses (drag content right = next, left = previous; tabs are RTL) ----
+    (function () {
+      const main = $('mainContent');
+      let x0, y0, t0, ok = false;
+      main.addEventListener('touchstart', (e) => {
+        ok = !e.target.closest('.chip-row, .witness-tabs') && e.touches.length === 1;
+        if (!ok) return;
+        x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+      }, { passive: true });
+      main.addEventListener('touchend', (e) => {
+        if (!ok) return; ok = false;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - x0, dy = t.clientY - y0;
+        if (Date.now() - t0 > 700 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+        switchWitness(dx > 0 ? 1 : -1);
+      }, { passive: true });
+    })();
+
+    // ---- swipe down to close the settings sheet ----
+    (function () {
+      const sh = $('settingsSheet');
+      let y0 = null, dy = 0;
+      sh.addEventListener('touchstart', (e) => {
+        if (sh.scrollTop > 0 && !e.target.closest('.sheet-handle, .sheet-title')) return;
+        y0 = e.touches[0].clientY; dy = 0; sh.style.transition = 'none';
+      }, { passive: true });
+      sh.addEventListener('touchmove', (e) => {
+        if (y0 === null) return;
+        dy = e.touches[0].clientY - y0;
+        sh.style.transform = dy > 0 ? 'translateY(' + dy + 'px)' : '';
+      }, { passive: true });
+      const end = () => {
+        if (y0 === null) return;
+        sh.style.transition = ''; sh.style.transform = '';
+        if (dy > 80) toggleSheet(false);
+        y0 = null; dy = 0;
+      };
+      sh.addEventListener('touchend', end);
+      sh.addEventListener('touchcancel', end);
+    })();
 
     // Android hardware back button: close panels first, then step back, then exit
     const capApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
