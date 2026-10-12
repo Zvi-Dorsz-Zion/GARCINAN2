@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       bundle_db:
-        description: 'לשלב את מסד הנתונים בתוך ה-APK (לא חובה — אפשר לבחור אותו מהמכשיר)'
+        description: 'לשלב את מסד הנתונים בתוך ה-APK (לא חובה)'
         type: boolean
         default: false
 
@@ -33,7 +33,8 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Install dependencies
         run: |
@@ -52,12 +53,12 @@ jobs:
             curl -L --fail -o www/assets/talmud.db "$URL"
           else
             URL=$(awk -F'\t' 'tolower($1) ~ /\.zip$/ {print $2; exit}' /tmp/assets.txt)
-            [ -n "$URL" ] || { echo "לא נמצא קובץ DB ב-release"; exit 1; }
+            [ -n "$URL" ] || { echo "no DB found in release"; exit 1; }
             curl -L --fail -o /tmp/dbdl/db.zip "$URL"
             unzip -o /tmp/dbdl/db.zip -d /tmp/dbdl
             cp "$(find /tmp/dbdl -iname '*.db' | head -n1)" www/assets/talmud.db
           fi
-          head -c 16 www/assets/talmud.db | grep -q "SQLite format 3" || { echo "הקובץ אינו SQLite"; exit 1; }
+          head -c 16 www/assets/talmud.db | grep -q "SQLite format 3" || { echo "not SQLite"; exit 1; }
 
       - name: Add Android platform and sync
         run: |
