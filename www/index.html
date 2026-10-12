@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>נוסחאות התלמוד</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="theme-parchment">
+  <header class="topbar">
+    <button id="btnMenu" class="icon-btn" aria-label="פתח ניווט">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <div class="topbar-title">
+      <strong id="titleMasechet">נוסחאות התלמוד</strong>
+      <span id="titleLocation" class="topbar-sub"></span>
+    </div>
+    <button id="btnSettings" class="icon-btn" aria-label="הגדרות תצוגה">
+      <svg viewBox="0 0 24 24" width="21" height="21"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    </button>
+  </header>
+
+  <div id="loadingScreen" class="loading-screen">
+    <div class="loading-mark">ת</div>
+    <p id="loadingText">טוען את מסד הנוסחאות…</p>
+    <div id="importBox" class="import-box" hidden>
+      <button class="cta-btn" id="btnPick">בחירת קובץ המאגר מהמכשיר</button>
+      <p class="hint">בחרו את הקובץ <b>talmud.db</b> ששמור בטלפון. הוא נשמר באפליקציה ולא צריך לבחור שוב.</p>
+    </div>
+  </div>
+  <input type="file" id="filePicker" hidden />
+
+  <div id="drawerScrim" class="drawer-scrim"></div>
+  <nav id="drawer" class="drawer" aria-label="ניווט מסכתות ודפים">
+    <div class="drawer-head"><input id="searchBox" type="search" placeholder="חיפוש מסכת…" class="search-box" /></div>
+    <div class="drawer-cols">
+      <div class="drawer-col" id="colMasechtot">
+        <div class="drawer-col-label">מסכת</div>
+        <div class="drawer-list" id="listMasechtot"></div>
+      </div>
+      <div class="drawer-col" id="colPages" hidden>
+        <div class="drawer-col-label"><button class="back-link" id="backToMasechtot">› חזרה למסכתות</button></div>
+        <div class="drawer-list" id="listPages"></div>
+      </div>
+      <div class="drawer-col" id="colSections" hidden>
+        <div class="drawer-col-label"><button class="back-link" id="backToPages">› חזרה לדפים</button></div>
+        <div class="drawer-list" id="listSections"></div>
+      </div>
+    </div>
+  </nav>
+
+  <div id="settingsScrim" class="drawer-scrim"></div>
+  <div id="settingsSheet" class="bottom-sheet" aria-label="הגדרות תצוגה">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title">תצוגה</h2>
+    <div class="setting-row"><span>ערכת נושא</span>
+      <div class="segmented" id="themeSwitch"><button data-theme="parchment">קלף</button><button data-theme="ink">כהה</button></div></div>
+    <div class="setting-row"><span>גודל טקסט</span>
+      <div class="stepper"><button id="fontMinus" class="icon-btn small">א־</button><span id="fontSizeLabel">100%</span><button id="fontPlus" class="icon-btn small">א+</button></div></div>
+    <div class="setting-row"><span>תצוגת מילים</span><label class="switch"><input type="checkbox" id="toggleWordMode" /><span class="switch-track"></span></label></div>
+    <div class="setting-row"><span>מצב קריאה (כל הדף ברצף)</span><label class="switch"><input type="checkbox" id="toggleReadMode" /><span class="switch-track"></span></label></div>
+    <div class="setting-row"><span>הסתר סימון בקיצורים</span><label class="switch"><input type="checkbox" id="toggleHideAbbrev" checked /><span class="switch-track"></span></label></div>
+    <div class="setting-row"><span>מאגר נתונים<br><small id="dbSourceLabel" class="hint"></small></span><button id="btnReplaceDb" class="chip">החלפה</button></div>
+  </div>
+
+  <main id="mainContent" class="main-content">
+    <div id="emptyState" class="empty-state">
+      <div class="empty-mark">📜</div>
+      <h1>בחרו מסכת ודף</h1>
+      <p>פתחו את הניווט כדי להשוות בין נוסחאות הגמרא.</p>
+      <button class="cta-btn" id="btnOpenNavEmpty">פתיחת ניווט</button>
+    </div>
+    <div id="compareView" class="compare-view" hidden>
+      <div id="sectionChips" class="chip-row"></div>
+      <div id="witnessTabs" class="witness-tabs"></div>
+      <div class="legend">
+        <span class="legend-item"><i class="mark mark-add"></i> תוספת</span>
+        <span class="legend-item"><i class="mark mark-miss"></i> חיסרון</span>
+        <span class="legend-item"><i class="mark mark-diff"></i> שינוי</span>
+      </div>
+      <article id="textPane" class="text-pane" dir="rtl"></article>
+    </div>
+  </main>
+
+  <script src="js/sql-wasm.js"></script>
+  <script src="js/diff.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

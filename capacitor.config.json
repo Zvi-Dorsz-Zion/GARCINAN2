@@ -1,0 +1,7 @@
+{
+  "appId": "il.talmud.formulas",
+  "appName": "נוסחאות התלמוד",
+  "webDir": "www",
+  "android": { "allowMixedContent": false },
+  "backgroundColor": "#F3E9D2"
+}
