@@ -1,0 +1,99 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      bundle_db:
+        description: 'לשלב את מסד הנתונים בתוך ה-APK (לא חובה — אפשר לבחור אותו מהמכשיר)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  DB_REPO: ACHI-GARCINAN/Talmud-Formulas-Software
+  DB_TAG: "1.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm run prepare-web
+
+      - name: Bundle talmud.db (optional)
+        if: ${{ inputs.bundle_db }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p www/assets /tmp/dbdl
+          gh api repos/$DB_REPO/releases/tags/$DB_TAG --jq '.assets[] | "\(.name)\t\(.browser_download_url)"' | tee /tmp/assets.txt
+          URL=$(awk -F'\t' 'tolower($1) ~ /\.(db|sqlite3?)$/ {print $2; exit}' /tmp/assets.txt)
+          if [ -n "$URL" ]; then
+            curl -L --fail -o www/assets/talmud.db "$URL"
+          else
+            URL=$(awk -F'\t' 'tolower($1) ~ /\.zip$/ {print $2; exit}' /tmp/assets.txt)
+            [ -n "$URL" ] || { echo "לא נמצא קובץ DB ב-release"; exit 1; }
+            curl -L --fail -o /tmp/dbdl/db.zip "$URL"
+            unzip -o /tmp/dbdl/db.zip -d /tmp/dbdl
+            cp "$(find /tmp/dbdl -iname '*.db' | head -n1)" www/assets/talmud.db
+          fi
+          head -c 16 www/assets/talmud.db | grep -q "SQLite format 3" || { echo "הקובץ אינו SQLite"; exit 1; }
+
+      - name: Add Android platform and sync
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Set versionCode (must increase on every build)
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -n "versionCode\|versionName" android/app/build.gradle
+
+      - name: Build release APK (unsigned)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Align and sign with the permanent key
+        run: |
+          source <(sed 's/=/="/;s/$/"/' signing/signing.properties)
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)
+          IN=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$BT/zipalign" -f -p 4 "$IN" "$RUNNER_TEMP/aligned.apk"
+          KS_PASS="$storePassword" "$BT/apksigner" sign --ks signing/release.jks \
+            --ks-pass env:KS_PASS --key-pass env:KS_PASS --ks-key-alias "$keyAlias" \
+            --out TalmudFormulas.apk "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs TalmudFormulas.apk | head -n 5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TalmudFormulas-apk
+          path: TalmudFormulas.apk
+
+      - name: Publish release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TalmudFormulas.apk
